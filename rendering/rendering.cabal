@@ -1,0 +1,12 @@
+cabal-version: 3.0
+name: rendering
+version: 1.0
+
+library
+  build-depends:
+    , base ^>= 4.14
+    , sdl2 ^>= 2.5
+  default-language: Haskell2010
+  exposed-modules:
+    Rendering.Display
+  hs-source-dirs: source

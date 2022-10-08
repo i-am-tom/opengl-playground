@@ -1,0 +1,4 @@
+packages: */*.cabal
+
+package *
+  library-for-ghci: true
