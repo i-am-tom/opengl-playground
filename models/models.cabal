@@ -1,16 +1,16 @@
 cabal-version: 3.0
-name: rendering
+name: models
 version: 1.0
 
 library
   build-depends:
     , base ^>= 4.14
     , containers ^>= 0.6
-    , models
+    , linear ^>= 1.21
     , OpenGL ^>= 3.0
-    , sdl2 ^>= 2.5
+    , toolbox
   default-language: Haskell2010
   exposed-modules:
-    Rendering.Controller
-    Rendering.Display
+    Model.Loader
+    Model.Raw
   hs-source-dirs: source

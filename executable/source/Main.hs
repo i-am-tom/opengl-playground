@@ -5,13 +5,25 @@
 module Main where
 
 import Control.Monad (unless)
-import Rendering.Display (withWindow)
+import Rendering.Display (withDisplay)
+import Model.Loader (create)
+import Rendering.Controller (prepare, render)
 import SDL qualified
+import SDL (V3 (V3))
 
 main :: IO ()
-main = withWindow SDL.defaultWindow \window -> do
+main = withDisplay SDL.defaultWindow \window -> do
+  model <- create
+    [ V3 (-0.5) ( 0.5) 0
+    , V3 (-0.5) (-0.5) 0
+    , V3 ( 0.5) (-0.5) 0
+    , V3 ( 0.5) (-0.5) 0
+    , V3 ( 0.5) ( 0.5) 0
+    , V3 (-0.5) ( 0.5) 0
+    ]
+
   untilWeQuit \events -> do
-    pure ()
+    prepare *> render model
 
 untilWeQuit :: ([SDL.Event] -> IO ()) -> IO ()
 untilWeQuit action = do
