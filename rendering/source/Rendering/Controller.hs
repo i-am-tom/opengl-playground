@@ -6,6 +6,7 @@ import Control.Exception (bracket_)
 import Data.Foldable (for_)
 import Data.Function ((&))
 import Data.Map.Strict qualified as Map
+import Foreign.Ptr (nullPtr)
 import Graphics.Rendering.OpenGL qualified as GL
 import Model.Raw qualified as Raw
 
@@ -17,7 +18,7 @@ prepare = do
 render :: Raw.Model -> IO ()
 render model = Raw.withModel model do
   withEnabledAttributes (Map.keys (Raw.enabledAttributes model)) do
-    GL.drawArrays GL.Triangles 0 (Raw.numberOfVertices model)
+    GL.drawElements GL.Triangles (Raw.numberOfVertices model) GL.UnsignedInt nullPtr
 
 withEnabledAttributes :: [GL.AttribLocation] -> IO x -> IO x
 withEnabledAttributes locations = bracket_ setup teardown

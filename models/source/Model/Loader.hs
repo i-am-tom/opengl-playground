@@ -17,21 +17,21 @@ import Linear (V3)
 import Model.Raw qualified as Raw
 import Control.Cleanup (Cleanup, cleanup, withCleanup)
 
-create :: [V3 GL.GLfloat] -> IO Raw.Model
-create positions = withCleanup \markForCleanup -> do
+create :: [V3 GL.GLint] -> [V3 GL.GLfloat] -> IO Raw.Model
+create indices positions = withCleanup \markForCleanup -> do
   withVertexArrayObject \vertexArrayObject -> do
     let location :: GL.AttribLocation
         location = GL.AttribLocation 0
 
-        floats :: [GL.GLfloat]
-        floats = positions >>= toList
+    bindIndicesBuffer (indices >>= toList)
+      >>= markForCleanup
 
-    storeDataInAttributeList location floats
+    storeDataInAttributeList location (positions >>= toList)
       >>= markForCleanup
 
     pure Raw.Model
       { vertexArrayObject = vertexArrayObject
-      , numberOfVertices  = fromIntegral (length positions)
+      , numberOfVertices  = fromIntegral (length indices * 3)
       , enabledAttributes = Map.singleton location GL.FloatVec3
       }
 
@@ -51,6 +51,17 @@ withVertexArrayObject = bracket setup (const teardown)
     teardown :: IO ()
     teardown = GL.bindVertexArrayObject GL.$= Nothing
 
+bindIndicesBuffer :: [GL.GLint] -> IO Cleanup
+bindIndicesBuffer indices = do
+  bufferObject <- GL.genObjectName
+  GL.bindBuffer GL.ElementArrayBuffer GL.$= Just bufferObject
+
+  withArray indices \pointer ->
+    GL.bufferData GL.ElementArrayBuffer GL.$=
+      (sizeOf indices, pointer, GL.StaticDraw)
+
+  pure $ cleanup (GL.deleteObjectName bufferObject)
+
 storeDataInAttributeList :: GL.AttribLocation -> [GL.GLfloat] -> IO Cleanup
 storeDataInAttributeList location information = do
   bufferObject <- GL.genObjectName
@@ -66,5 +77,5 @@ storeDataInAttributeList location information = do
   GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
   pure $ cleanup (GL.deleteObjectName bufferObject)
 
-sizeOf :: [GL.GLfloat] -> GL.GLsizeiptr
+sizeOf :: Storable x => [x] -> GL.GLsizeiptr
 sizeOf xs = fromIntegral (Storable.sizeOf (head xs) * length xs)

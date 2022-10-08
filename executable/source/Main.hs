@@ -13,7 +13,7 @@ import SDL (V3 (V3))
 
 main :: IO ()
 main = withDisplay SDL.defaultWindow \window -> do
-  model <- create
+  model <- create [ V3 0 1 3, V3 3 1 2 ]
     [ V3 (-0.5) ( 0.5) 0
     , V3 (-0.5) (-0.5) 0
     , V3 ( 0.5) (-0.5) 0
