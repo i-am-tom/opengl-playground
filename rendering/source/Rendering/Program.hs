@@ -2,7 +2,10 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 module Rendering.Program where
 
 import Control.Cleanup (cleanup, cleanupNamedObject, withCleanup)
@@ -11,27 +14,45 @@ import Control.Monad (unless)
 import Data.ByteString qualified as ByteString
 import Data.Function ((&))
 import Data.Functor.Const (Const)
-import Data.Kind (Type)
+import Data.Kind (Constraint, Type)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Traversable (for)
 import Graphics.Rendering.OpenGL qualified as GL
 import Model.Loader qualified as Loader
+import Model.Raw qualified as Raw
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (hPrintf)
 
+type Renderer :: ((Type -> Type) -> Type) -> Constraint
+class Renderer program where
+  data Model program :: Type
+
+  toRawModel :: Model program -> Raw.Model
+
 type Compiled :: ((Type -> Type) -> Type) -> Type
 data Compiled program
   = Compiled
-      { compiledProgram :: GL.Program
+      { compiledProgram      :: GL.Program
+      , requiredAttributes   :: Map GL.AttribLocation GL.VariableType
+      , renderingBracket     :: forall x. Model program -> IO x -> IO x
       }
 
-compile
-  :: Map String GL.GLuint
-  -> Map GL.ShaderType FilePath
-  -> program (Const GL.UniformLocation)
-  -> IO (Compiled program)
-compile attributes shaders uniforms = withCleanup \markForCleanup -> do
+type Configure :: ((Type -> Type) -> Type) -> Type
+data Configure program
+  = Configure
+      { attributes :: Map String GL.GLuint
+      , shaders    :: Map GL.ShaderType FilePath
+      , textures   :: Set GL.TextureUnit
+      , uniforms   :: program (Const GL.UniformLocation)
+      , setup      :: Model program -> IO ()
+      , teardown   :: Model program -> IO ()
+      }
+
+compile :: forall program. Configure program -> IO (Compiled program)
+compile Configure{..} = withCleanup \markForCleanup -> do
   compiledProgram <- GL.createProgram
 
   shaders & Map.foldMapWithKey \shaderType filepath -> do
@@ -54,6 +75,10 @@ compile attributes shaders uniforms = withCleanup \markForCleanup -> do
       GL.detachShader compiledProgram shader
       GL.deleteObjectName shader
 
+  attributes & Map.foldMapWithKey \name location ->
+    GL.attribLocation compiledProgram name
+      GL.$= GL.AttribLocation location
+
   Loader.withVertexArrayObject \vertexArrayObject -> do
     markForCleanup (cleanupNamedObject vertexArrayObject)
 
@@ -75,9 +100,15 @@ compile attributes shaders uniforms = withCleanup \markForCleanup -> do
 
       exitFailure
 
-  attributes & Map.foldMapWithKey \name location ->
-    GL.attribLocation compiledProgram name
-      GL.$= GL.AttribLocation location
+  requiredAttributes <- fmap Map.fromList do
+    activeAttributes <- GL.activeAttribs compiledProgram
+
+    for activeAttributes \(_, variableType, name) -> do
+      location <- GL.get (GL.attribLocation compiledProgram name)
+      pure (location, variableType)
+
+  let renderingBracket :: Model program -> IO x -> IO x
+      renderingBracket model = bracket_ (setup model) (teardown model)
 
   pure Compiled{..}
 

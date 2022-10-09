@@ -16,5 +16,6 @@ library
     Rendering.Controller
     Rendering.Display
     Rendering.Program
-    Rendering.Program.Static
+    Rendering.Program.Coloured
+    Rendering.Program.Textured
   hs-source-dirs: source

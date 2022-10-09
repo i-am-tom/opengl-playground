@@ -6,6 +6,7 @@ library
   build-depends:
     , base ^>= 4.14
     , containers ^>= 0.6
+    , GLUtil ^>= 0.10
     , linear ^>= 1.21
     , OpenGL ^>= 3.0
     , toolbox

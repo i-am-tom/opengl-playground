@@ -1,14 +1,13 @@
 cabal-version: 3.0
-name: executable
+name: textures
 version: 1.0
 
-executable executable
+library
   build-depends:
     , base ^>= 4.14
-    , models
-    , rendering
-    , sdl2 ^>= 2.5
-    , textures
+    , GLUtil ^>= 0.10
+    , OpenGL ^>= 3.0
   default-language: Haskell2010
+  exposed-modules:
+    Texture.Loader
   hs-source-dirs: source
-  main-is: Main.hs
