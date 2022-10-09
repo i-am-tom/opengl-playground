@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -5,12 +8,14 @@
 
 module Rendering.Program.Textured where
 
+import Barbies qualified as B
 import Data.Functor.Const (Const)
 import Data.Kind (Type)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Generics (Generic)
 import Graphics.Rendering.OpenGL qualified as GL
 import Model.Raw qualified as Raw
 import Rendering.Program (Compiled, compile)
@@ -21,6 +26,13 @@ data Textured f
   = Textured
       {
       }
+  deriving stock (Generic)
+  deriving anyclass
+    ( B.ApplicativeB
+    , B.ConstraintsB
+    , B.FunctorB
+    , B.TraversableB
+    )
 
 instance Program.Renderer Textured where
   data Model Textured
