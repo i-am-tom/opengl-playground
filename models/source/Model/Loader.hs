@@ -15,7 +15,7 @@ import Foreign.Storable qualified as Storable
 import Graphics.Rendering.OpenGL qualified as GL
 import Linear (V3)
 import Model.Raw qualified as Raw
-import Control.Cleanup (Cleanup, cleanup, withCleanup)
+import Control.Cleanup (Cleanup, cleanupNamedObject, withCleanup)
 
 create :: [V3 GL.GLint] -> [V3 GL.GLfloat] -> IO Raw.Model
 create indices positions = withCleanup \markForCleanup -> do
@@ -60,7 +60,7 @@ bindIndicesBuffer indices = do
     GL.bufferData GL.ElementArrayBuffer GL.$=
       (sizeOf indices, pointer, GL.StaticDraw)
 
-  pure $ cleanup (GL.deleteObjectName bufferObject)
+  pure (cleanupNamedObject bufferObject)
 
 storeDataInAttributeList :: GL.AttribLocation -> [GL.GLfloat] -> IO Cleanup
 storeDataInAttributeList location information = do
@@ -75,7 +75,7 @@ storeDataInAttributeList location information = do
     (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float 0 nullPtr)
 
   GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
-  pure $ cleanup (GL.deleteObjectName bufferObject)
+  pure (cleanupNamedObject bufferObject)
 
 sizeOf :: Storable x => [x] -> GL.GLsizeiptr
 sizeOf xs = fromIntegral (Storable.sizeOf (head xs) * length xs)
