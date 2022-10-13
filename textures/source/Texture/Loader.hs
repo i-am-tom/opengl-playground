@@ -17,8 +17,8 @@ fromTextureFile ∷ FilePath → IO GL.TextureObject
 fromTextureFile filepath = do
   GL.readTexture filepath >>= \case
     Right object → do
-      GL.textureFilter GL.Texture2D GL.$= ((GL.Linear', Nothing), GL.Linear')
-      GL.texture2DWrap GL.$= (GL.Repeated, GL.Repeat)
+      GL.textureFilter GL.Texture2D GL.$=! ((GL.Linear', Nothing), GL.Linear')
+      GL.texture2DWrap GL.$=! (GL.Repeated, GL.Repeat)
 
       pure object
 
