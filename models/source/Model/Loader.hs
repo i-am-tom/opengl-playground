@@ -4,14 +4,15 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UnicodeSyntax #-}
 
 module Model.Loader where
 
-import Control.Cleanup (Cleanup, cleanupNamedObject, withCleanup)
-import Graphics.GLUtil qualified as GL (variableType)
-import Control.Exception (bracket)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Foldable (toList)
+import Data.Kind (Type)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy (Proxy))
 import Data.Traversable (for)
@@ -20,83 +21,63 @@ import Foreign.Ptr (nullPtr)
 import Foreign.Storable (Storable)
 import Foreign.Storable qualified as Storable
 import GHC.TypeLits (KnownNat, natVal)
+import Graphics.GLUtil qualified as GL (variableType)
 import Graphics.Rendering.OpenGL qualified as GL
 import Linear (V3)
 import Linear.V (Size)
 import Model.Raw qualified as Raw
 
+type Attribute ∷ Type
 data Attribute where
-  Attribute :: GL.AttribLocation -> [GL.GLfloat] -> GL.NumComponents -> Attribute
+  Attribute ∷ GL.AttribLocation → [GL.GLfloat] → GL.NumComponents → Attribute
 
-(~>) :: forall t. (Foldable t, KnownNat (Size t)) => GL.GLuint -> [t GL.GLfloat] -> Attribute
+(~>) ∷ ∀ t. (Foldable t, KnownNat (Size t)) ⇒ GL.GLuint → [t GL.GLfloat] → Attribute
 (~>) location values = do
-  let numberOfComponents :: GL.NumComponents
-      numberOfComponents = fromIntegral do
-        natVal (Proxy @(Size t))
+  let numberOfComponents ∷ GL.NumComponents
+      numberOfComponents = fromIntegral $ natVal @(Size t) undefined
 
   Attribute (GL.AttribLocation location) (values >>= toList) numberOfComponents
 
-create :: [V3 GL.GLint] -> [Attribute] -> IO Raw.Model
-create indices attributes = withCleanup \markForCleanup -> do
-  withVertexArrayObject \vertexArrayObject -> do
-    bindIndicesBuffer (indices >>= toList) >>= markForCleanup
+create ∷ ∀ m. [V3 GL.GLint] → [Attribute] → IO Raw.Model
+create indices attributes = do
+  vertexArrayObject ← GL.genObjectName
+  GL.bindVertexArrayObject GL.$= Just vertexArrayObject
 
-    enabledAttributes <-
-      for attributes \(Attribute location values groupSize) -> do
-        storeDataInAttributeList location groupSize values
-          >>= markForCleanup
-
-        pure (location, GL.variableType values)
-
-    pure Raw.Model
-      { vertexArrayObject = vertexArrayObject
-      , numberOfVertices  = fromIntegral (length indices * 3)
-      , enabledAttributes = Map.fromList enabledAttributes
-      }
-
-destroy :: Raw.Model -> IO ()
-destroy = GL.deleteObjectName . Raw.vertexArrayObject
-
-withVertexArrayObject :: (GL.VertexArrayObject -> IO x) -> IO x
-withVertexArrayObject = bracket setup (const teardown)
-  where
-    setup :: IO GL.VertexArrayObject
-    setup = do
-      vertexArrayObject <- GL.genObjectName
-      GL.bindVertexArrayObject GL.$= Just vertexArrayObject
-
-      pure vertexArrayObject
-
-    teardown :: IO ()
-    teardown = GL.bindVertexArrayObject GL.$= Nothing
-
-bindIndicesBuffer :: [GL.GLint] -> IO Cleanup
-bindIndicesBuffer indices = do
-  bufferObject <- GL.genObjectName
+  bufferObject ← GL.genObjectName
   GL.bindBuffer GL.ElementArrayBuffer GL.$= Just bufferObject
 
-  withArray indices \pointer ->
+  withArray indices \pointer →
     GL.bufferData GL.ElementArrayBuffer GL.$=
       (sizeOf indices, pointer, GL.StaticDraw)
 
-  pure (cleanupNamedObject bufferObject)
+  enabledAttributes ← fmap Map.fromList do
+    for attributes \(Attribute location values numberOfComponents) → do
+      bufferObject ← GL.genObjectName
+      GL.bindBuffer GL.ArrayBuffer GL.$= Just bufferObject
 
-storeDataInAttributeList :: GL.AttribLocation -> GL.NumComponents -> [GL.GLfloat] -> IO Cleanup
-storeDataInAttributeList location numberOfComponents information = do
-  bufferObject <- GL.genObjectName
-  GL.bindBuffer GL.ArrayBuffer GL.$= Just bufferObject
+      withArray values \pointer →
+        GL.bufferData GL.ArrayBuffer GL.$=
+          (sizeOf values, pointer, GL.StaticDraw)
 
-  withArray information \pointer ->
-    GL.bufferData GL.ArrayBuffer GL.$=
-      (sizeOf information, pointer, GL.StaticDraw)
+      GL.vertexAttribPointer location GL.$=
+        ( GL.ToFloat
+        , GL.VertexArrayDescriptor numberOfComponents GL.Float 0 nullPtr
+        )
 
-  GL.vertexAttribPointer location GL.$=
-    ( GL.ToFloat
-    , GL.VertexArrayDescriptor numberOfComponents GL.Float 0 nullPtr
-    )
+      pure (bufferObject, (location, GL.variableType values))
 
-  GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
-  pure (cleanupNamedObject bufferObject)
+  GL.bindVertexArrayObject GL.$= Nothing
+  GL.bindBuffer GL.ElementArrayBuffer GL.$= Nothing
+  GL.deleteObjectName bufferObject
 
-sizeOf :: Storable x => [x] -> GL.GLsizeiptr
+  pure Raw.Model
+    { vertexArrayObject = vertexArrayObject
+    , numberOfVertices  = fromIntegral (length indices * 3)
+    , enabledAttributes = Map.fromList (Map.elems enabledAttributes)
+    }
+
+destroy ∷ ∀ m. MonadIO m ⇒ Raw.Model → m ()
+destroy = GL.deleteObjectName . Raw.vertexArrayObject
+
+sizeOf ∷ ∀ x. Storable x ⇒ [x] → GL.GLsizeiptr
 sizeOf xs = fromIntegral (Storable.sizeOf (head xs) * length xs)

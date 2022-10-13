@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -9,7 +10,7 @@ import Data.Kind (Type)
 
 type Delta :: Type -> Type
 data Delta x = Unchanged | Changed x
-  deriving (Eq, Functor, Ord, Show)
+  deriving (Eq, Foldable, Functor, Ord, Show)
 
 instance Semigroup (Delta x) where
   this <> Unchanged = this
@@ -18,5 +19,5 @@ instance Semigroup (Delta x) where
 instance Monoid (Delta x) where
   mempty = Unchanged
 
-unchanged :: B.ApplicativeB b => b Delta
-unchanged = B.bpure Unchanged
+bunchanged :: B.ApplicativeB b => b Delta
+bunchanged = B.bpure Unchanged

@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -8,133 +9,148 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE UnicodeSyntax #-}
+
 module Rendering.Program where
 
 import Barbies (AllB, ApplicativeB, ConstraintsB, TraversableB (btraverse))
-import Control.Cleanup (cleanup, cleanupNamedObject, withCleanup)
 import Control.Exception (bracket_)
+import Control.Lens (Lens')
 import Control.Monad (unless)
+import Control.Monad.Catch (MonadMask)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.ByteString qualified as ByteString
+import Data.Foldable (for_)
 import Data.Function ((&))
 import Data.Functor.Const (Const (Const, getConst))
+import Data.Key (forWithKey, forWithKey_)
 import Data.Kind (Constraint, Type)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Proxy (Proxy (Proxy))
 import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Traversable (for)
 import Graphics.GLUtil qualified as GL (AsUniform)
+import Graphics.Rendering.Binding (withBinding)
 import Graphics.Rendering.OpenGL qualified as GL
 import Model.Loader qualified as Loader
-import Model.Raw qualified as Raw
+import Model.Raw qualified as Model
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (hPrintf)
 
-type Renderer :: ((Type -> Type) -> Type) -> Constraint
+type Renderer ∷ ((Type → Type) → Type) → Constraint
 class
     ( AllB GL.AsUniform program
     , ApplicativeB program
     , ConstraintsB program
     , TraversableB program
-    ) => Renderer program where
-  data Model program :: Type
 
-  toRawModel :: Model program -> Raw.Model
+    , Model.HasRawModel (Model program)
+    ) ⇒ Renderer program where
+  type Model program :: Type
 
-type Compiled :: ((Type -> Type) -> Type) -> Type
-data Compiled program
+type Compiled ∷ ((Type → Type) → Type) → Type
+data Compiled p
   = Compiled
-      { compiledProgram    :: GL.Program
-      , requiredAttributes :: Map GL.AttribLocation GL.VariableType
-      , renderingBracket   :: forall x. Model program -> IO x -> IO x
-      , uniformLocations   :: program (Const GL.UniformLocation)
+      { compiledProgram ∷ GL.Program
+      , renderingBracket ∷ ∀ x. Model p → IO x → IO x
+      , requiredAttributes ∷ Map GL.AttribLocation GL.VariableType
+      , uniformLocations ∷ p (Const GL.UniformLocation)
       }
 
-type Configure :: ((Type -> Type) -> Type) -> Type
-data Configure program
+type Configure ∷ ((Type → Type) → Type) → Type
+data Configure p
   = Configure
-      { attributes :: Map String GL.GLuint
-      , shaders    :: Map GL.ShaderType FilePath
-      , textures   :: Set GL.TextureUnit
-      , uniforms   :: program (Const String)
-      , setup      :: Model program -> IO ()
-      , teardown   :: Model program -> IO ()
+      { attributes ∷ Map String GL.GLuint
+      , shaders ∷ Map GL.ShaderType FilePath
+      , textures ∷ Set GL.TextureUnit
+      , uniforms ∷ p (Const String)
+      , setup ∷ Model p → IO ()
+      , teardown ∷ Model p → IO ()
       }
 
-compile :: forall program. TraversableB program => Configure program -> IO (Compiled program)
-compile Configure{..} = withCleanup \markForCleanup -> do
-  compiledProgram <- GL.createProgram
+compile ∷ ∀ p. TraversableB p ⇒ Configure p → IO (Compiled p)
+compile Configure{..} = do
+  compiledProgram ← GL.createProgram
 
-  shaders & Map.foldMapWithKey \shaderType filepath -> do
-    shader <- GL.createShader shaderType
-    source <- ByteString.readFile filepath
+  shaders ←
+    forWithKey shaders \shaderType filepath → do
+      shader ← GL.createShader shaderType
+      source ← ByteString.readFile filepath
 
-    GL.shaderSourceBS shader GL.$= source
-    GL.compileShader shader
+      GL.shaderSourceBS shader GL.$= source
+      GL.compileShader shader
 
-    GL.compileStatus shader >>= flip unless do
-      information <- GL.shaderInfoLog shader
+      GL.compileStatus shader >>= flip unless do
+        information ← GL.shaderInfoLog shader
 
-      hPrintf stderr "Error while compiling %s" filepath
-      hPutStrLn stderr information
+        hPrintf stderr "Error while compiling %s" filepath
+        hPutStrLn stderr information
 
-      exitFailure
+        exitFailure
 
-    GL.attachShader compiledProgram shader
-    markForCleanup $ cleanup do
-      GL.detachShader compiledProgram shader
-      GL.deleteObjectName shader
+      GL.attachShader compiledProgram shader
+      pure shader
 
-  attributes & Map.foldMapWithKey \name location ->
+  forWithKey_ attributes \name location →
     GL.attribLocation compiledProgram name
       GL.$= GL.AttribLocation location
 
-  Loader.withVertexArrayObject \vertexArrayObject -> do
-    markForCleanup (cleanupNamedObject vertexArrayObject)
+  GL.linkProgram compiledProgram
+  GL.linkStatus compiledProgram >>= flip unless do
+    information ← GL.programInfoLog compiledProgram
 
-    GL.linkProgram compiledProgram
-    GL.linkStatus compiledProgram >>= flip unless do
-      information <- GL.programInfoLog compiledProgram
+    hPutStrLn stderr "Error while linking program"
+    hPutStrLn stderr information
 
-      hPutStrLn stderr "Error while linking program"
-      hPutStrLn stderr information
+    exitFailure
 
-      exitFailure
+  for_ shaders \shader -> do
+    GL.detachShader compiledProgram shader
+    GL.deleteObjectName shader
 
-    GL.validateProgram compiledProgram
-    GL.validateStatus compiledProgram >>= flip unless do
-      information <- GL.programInfoLog compiledProgram
+  temporary ← GL.genObjectName
+  GL.bindVertexArrayObject GL.$= Just temporary
 
-      hPutStrLn stderr "Error while validating program"
-      hPutStrLn stderr information
+  GL.validateProgram compiledProgram
+  GL.validateStatus compiledProgram >>= flip unless do
+    information ← GL.programInfoLog compiledProgram
 
-      exitFailure
+    hPutStrLn stderr "Error while validating program"
+    hPutStrLn stderr information
 
-  requiredAttributes <- fmap Map.fromList do
-    activeAttributes <- GL.activeAttribs compiledProgram
+    exitFailure
 
-    for activeAttributes \(_, variableType, name) -> do
-      location <- GL.get (GL.attribLocation compiledProgram name)
+  GL.bindVertexArrayObject GL.$= Nothing
+  GL.deleteObjectName temporary
+
+  requiredAttributes ← fmap Map.fromList do
+    activeAttributes ← GL.get (GL.activeAttribs compiledProgram)
+
+    for activeAttributes \(_, variableType, name) → do
+      location ← GL.get (GL.attribLocation compiledProgram name)
       pure (location, variableType)
 
-  let locate :: Const String x -> IO (Const GL.UniformLocation x)
+  let locate ∷ Const String x → IO (Const GL.UniformLocation x)
       locate = fmap Const . GL.get . GL.uniformLocation compiledProgram . getConst
 
-  uniformLocations <- btraverse locate uniforms
+  uniformLocations ← btraverse locate uniforms
 
-  let renderingBracket :: Model program -> IO x -> IO x
+  let renderingBracket ∷ Model p → IO x → IO x
       renderingBracket model = bracket_ (setup model) (teardown model)
 
   pure Compiled{..}
 
-destroy :: Compiled program -> IO ()
+destroy ∷ ∀ p m. MonadIO m ⇒ Compiled p → m ()
 destroy = GL.deleteObjectName . compiledProgram
 
-withRenderingProgram :: Compiled program -> IO x -> IO x
-withRenderingProgram Compiled{ compiledProgram } = bracket_ setup teardown
+withRenderingProgram ∷ ∀ p x. Compiled p → IO x → IO x
+withRenderingProgram p = bracket_ setup teardown
   where
-    setup :: IO ()
-    setup = GL.currentProgram GL.$= Just compiledProgram
+    setup ∷ IO ()
+    setup = GL.currentProgram GL.$=! Just (compiledProgram p)
 
-    teardown :: IO ()
-    teardown = GL.currentProgram GL.$= Nothing
+    teardown ∷ IO ()
+    teardown = GL.currentProgram GL.$=! Nothing

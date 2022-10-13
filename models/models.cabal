@@ -6,7 +6,9 @@ library
   build-depends:
     , base ^>= 4.14
     , containers ^>= 0.6
+    , exceptions ^>= 0.10
     , GLUtil ^>= 0.10
+    , lens ^>= 5.2
     , linear ^>= 1.21
     , OpenGL ^>= 3.0
     , toolbox
@@ -14,4 +16,5 @@ library
   exposed-modules:
     Model.Loader
     Model.Raw
+    Model.Textured
   hs-source-dirs: source

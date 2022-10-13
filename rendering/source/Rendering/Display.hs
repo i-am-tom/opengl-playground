@@ -13,8 +13,8 @@ import System.IO (stderr)
 import Text.Printf (hPrintf)
 
 withDisplay :: SDL.WindowConfig -> (SDL.Window -> IO x) -> IO x
-withDisplay windowConfig action
-  = withWindow windowConfig \window ->
+withDisplay config action
+  = withWindow config \window ->
       withContext window (action window)
 
 withWindow :: SDL.WindowConfig -> (SDL.Window -> IO x) -> IO x
@@ -42,12 +42,10 @@ withWindow windowConfig = bracket setup teardown
       pure window
 
     teardown :: SDL.Window -> IO ()
-    teardown window = do
-      SDL.destroyWindow window
-      SDL.quit
+    teardown window = SDL.destroyWindow window *> SDL.quit
 
 withContext :: SDL.Window -> IO x -> IO x
-withContext window action = bracket setup teardown \_ -> action
+withContext window action = bracket setup SDL.glDeleteContext \_ -> action
   where
     setup :: IO SDL.GLContext
     setup = do
@@ -59,6 +57,3 @@ withContext window action = bracket setup teardown \_ -> action
 
       hPrintf stderr "Context successfully created and attached."
       pure context
-
-    teardown :: SDL.GLContext -> IO ()
-    teardown = SDL.glDeleteContext
