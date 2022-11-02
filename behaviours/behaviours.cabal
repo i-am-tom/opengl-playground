@@ -1,0 +1,35 @@
+cabal-version: 3.0
+name: behaviours
+version: 0.1.0.0
+
+library
+    exposed-modules: Control.Applicative.Fix
+
+                     FRP.Behaviour
+                     FRP.Event
+    build-depends:
+      , base ^>= 4.14
+      , containers ^>= 0.6
+      , primitive ^>= 0.7
+      , witherable ^>= 0.4
+    hs-source-dirs: source
+    default-language: Haskell2010
+
+test-suite behaviours
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: Driver.hs
+  build-depends:
+    , base
+    , behaviours
+    , hedgehog ^>= 1.1
+    , monad-control ^>= 1.0
+    , primitive
+    , tasty ^>= 1.4
+    , tasty-hedgehog ^>= 1.3
+    , witherable
+  build-tool-depends:
+   tasty-discover:tasty-discover
+  other-modules:
+    FRP.EventTest
