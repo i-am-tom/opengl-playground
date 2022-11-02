@@ -7,11 +7,22 @@ permissions:
   contents: read
 
 jobs:
-  behaviours:
+  build:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
+
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.ghcup
+          ~/.cabal/packages
+          ~/.cabal/store
+          dist-newstyle
+
+        key: ${{ runner.os }}-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+        restore-keys: ${{ runner.os }}-${{ matrix.ghc }}-
 
     - name: Install Haskell
       run: |
