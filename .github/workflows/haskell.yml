@@ -1,4 +1,4 @@
-name: OpenGL Playground CI
+name: Behaviours
 
 on:
   push
