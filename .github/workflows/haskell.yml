@@ -27,7 +27,7 @@ jobs:
     - name: Dependencies
       run: |
         cabal update
-        cabal build all --only-dependencies --enable-tests --enable-benchmarks
+        cabal build behaviours --only-dependencies --enable-tests --enable-benchmarks
 
     - name: Build
       run: cabal build behaviours --enable-tests
