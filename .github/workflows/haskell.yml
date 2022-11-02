@@ -7,23 +7,20 @@ permissions:
   contents: read
 
 jobs:
-  build:
-
+  behaviours:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-haskell@v1.1
-      with:
-        ghc-version: '8.6'
 
-    - name: Build `behaviours` dependencies
+    - name: Dependencies
       run: |
         cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
+        cabal build all --only-dependencies --enable-tests --enable-benchmarks
 
-    - name: Build `behaviours`
+    - name: Build
       run: cabal build behaviours --enable-tests
 
-    - name: Test `behaviours`
+    - name: Test
       run: cabal test behaviours
