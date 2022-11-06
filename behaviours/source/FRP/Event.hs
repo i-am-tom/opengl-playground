@@ -9,23 +9,24 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
+-- | Largely just a port of `purescript-event` to Haskell.
 module FRP.Event where
 
 import Control.Applicative (Alternative ((<|>), empty), liftA2)
-import Control.Applicative.Fix (ApplicativeFix)
 import Control.Arrow ((&&&))
 import Control.Monad (join)
 import Control.Monad.Primitive (PrimMonad (PrimState))
 import Data.Foldable (traverse_)
-import Data.IntMap.Strict qualified as IntMap
+import Data.IntMap.Strict qualified as IntMap (delete, empty, insert)
 import Data.Kind (Type)
-import Data.Primitive.MutVar
+import Data.Primitive.MutVar (MutVar, atomicModifyMutVar', newMutVar, readMutVar, writeMutVar)
 import Witherable (Filterable (mapMaybe))
 
+-- | An event is a function that will "register" the given listener and return
+-- an action to unregister.
 type Event ∷ (Type → Type) → (Type → Type)
 newtype Event m x = Event { subscribe ∷ (x → m ()) → m (m ()) }
-  deriving anyclass (ApplicativeFix)
-  deriving stock (Functor)
+  deriving stock Functor
 
 instance Applicative m ⇒ Filterable (Event m) where
   mapMaybe f xs = Event \k → subscribe xs (traverse_ k . f)
@@ -50,6 +51,8 @@ instance PrimMonad m ⇒ Alternative (Event m) where
   Event xs <|> Event ys = Event \k → liftA2 (*>) (xs k) (ys k)
   empty = Event \_ → pure (pure ())
 
+-- | Create a new custom event. The result is the event, and a function to pass
+-- the given value to all registered listeners.
 create ∷ ∀ m x. PrimMonad m ⇒ m (Event m x, x → m ())
 create = do
   subscribers ← newMutVar IntMap.empty
@@ -70,25 +73,9 @@ create = do
 
   pure (event, push)
 
-newest ∷ PrimMonad m ⇒ Event m x → m (MutVar (PrimState m) (Maybe x), m ())
-newest xs = do
-  ref ← newMutVar Nothing
-
-  cancel ← subscribe xs \x ->
-    writeMutVar ref (Just x)
-
-  pure (ref, cancel)
-
-sample ∷ ∀ m x y. PrimMonad m ⇒ Event m x → Event m (x → y) → Event m y
-sample xs fs = Event \k → do
-  (ref, cx) ← newest xs
-
-  cf ← subscribe fs \f →
-    readMutVar ref >>= \mx →
-      mapM_ (k . f) mx
-
-  pure (cx *> cf)
-
+-- | Fold over an event stream. Works exactly the same way as 'scanl': every
+-- time the given event is triggered, its value is combined with the
+-- accumulated total to produce a "cumulative" stream in the returned event.
 fold ∷ ∀ m x y. PrimMonad m ⇒ (x → y → y) → y → Event m x → Event m y
 fold f initial xs = Event \k → do
   acc ← newMutVar initial
@@ -97,12 +84,35 @@ fold f initial xs = Event \k → do
     atomicModifyMutVar' acc do
       f x &&& k . f x
 
-once ∷ ∀ m x. PrimMonad m ⇒ Event m x → (x → m ()) → m (m ())
-once event k = do
-  ref ← newMutVar $ pure ()
+-- | Register to the given stream of streams. Every time a stream is returned,
+-- unsubscribe to the previous stream and begin piping the new stream's events
+-- to the output.
+latest ∷ ∀ m x. PrimMonad m ⇒ Event m (Event m x) → Event m x
+latest xs = Event \k → do
+  inner ← newMutVar $ pure ()
+  outer ← subscribe xs \event → do
+    join (readMutVar inner)
+    subscribe event k >>= writeMutVar inner
 
-  cancel ← subscribe event \x →
-    k x *> join (readMutVar ref)
+  pure do
+    join (readMutVar inner)
+    outer
 
-  writeMutVar ref cancel
-  pure cancel
+-- | Every time the /second/ event fires, the last value from the /first/ event
+-- will be applied to the function to produce the result.
+sample ∷ ∀ m x y. PrimMonad m ⇒ Event m x → Event m (x → y) → Event m y
+sample xs fs = Event \k → do
+  ref ← newMutVar Nothing
+
+  cx ← subscribe xs \x →
+    writeMutVar ref (Just x)
+
+  cf ← subscribe fs \f →
+    readMutVar ref >>= \mx →
+      mapM_ (k . f) mx
+
+  pure (cx *> cf)
+
+-- | Sample a monadic action every time the event fires.
+with ∷ Monad m ⇒ m x → Event m (x → y) → Event m y
+with xs e = Event \k → subscribe e \f → xs >>= k . f

@@ -3,10 +3,9 @@ name: behaviours
 version: 0.1.0.0
 
 library
-    exposed-modules: Control.Applicative.Fix
-
-                     FRP.Behaviour
-                     FRP.Event
+    exposed-modules:
+      FRP.Behaviour
+      FRP.Event
     build-depends:
       , base ^>= 4.14
       , containers ^>= 0.6
@@ -32,4 +31,5 @@ test-suite behaviours
   build-tool-depends:
    tasty-discover:tasty-discover
   other-modules:
+    FRP.BehaviourTest
     FRP.EventTest
