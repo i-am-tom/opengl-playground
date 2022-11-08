@@ -13,16 +13,16 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - uses: haskell/actions/setup@v2
+      with:
+        ghc-version: 8.10.7
+
     - uses: actions/cache@v3
       with:
         key: ${{ runner.os }}-cabal-store
         path: |
           ${{ cabal-store }}
           dist-newstyle
-
-    - uses: haskell/actions/setup@v2
-      with:
-        ghc-version: 8.10.7
 
     - name: Dependencies
       run: |
@@ -41,16 +41,16 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - uses: haskell/actions/setup@v2
+      with:
+        ghc-version: 8.10.7
+
     - uses: actions/cache@v3
       with:
         key: ${{ runner.os }}-cabal-store
         path: |
           ${{ cabal-store }}
           dist-newstyle
-
-    - uses: haskell/actions/setup@v2
-      with:
-        ghc-version: 8.10.7
 
     - name: Dependencies
       run: |
