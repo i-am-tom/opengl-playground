@@ -30,7 +30,7 @@ jobs:
     - name: Install Haskell
       run: |
         sudo apt-get update
-        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_MINIMAL=please sh
 
         ghcup install ghc 8.10.7
         ghcup install cabal 3.6.2.0
@@ -72,7 +72,7 @@ jobs:
     - name: Install Haskell
       run: |
         sudo apt-get update
-        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_MINIMAL=please sh
 
         ghcup install ghc 8.10.7
         ghcup install cabal 3.6.2.0
