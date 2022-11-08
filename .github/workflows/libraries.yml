@@ -1,4 +1,4 @@
-name: Libraries
+name: libraries
 
 on:
   push
@@ -31,10 +31,10 @@ jobs:
       run: |
         sudo apt-get update
         curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
-        
+
         ghcup install ghc 8.10.7
         ghcup install cabal 3.6.2.0
-        
+
         ghcup set ghc 8.10.7
         ghcup set cabal 3.6.2.0
 
@@ -48,3 +48,42 @@ jobs:
 
     - name: Test
       run: cabal test behaviours
+
+  wavefront:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.ghcup
+          ~/.cabal/packages
+          ~/.cabal/store
+          dist-newstyle
+
+        key: ${{ runner.os }}-${{ hashFiles('**/*.cabal', '**/cabal.project', '**/cabal.project.freeze') }}
+        restore-keys: ${{ runner.os }}-${{ matrix.ghc }}-
+
+    - name: Install Haskell
+      run: |
+        sudo apt-get update
+        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+
+        ghcup install ghc 8.10.7
+        ghcup install cabal 3.6.2.0
+
+        ghcup set ghc 8.10.7
+        ghcup set cabal 3.6.2.0
+
+    - name: Dependencies
+      run: |
+        cabal update
+        cabal build wavefront --only-dependencies --enable-tests --enable-benchmarks
+
+    - name: Build
+      run: cabal build wavefront --enable-tests
+
+    - name: Test
+      run: cabal test wavefront
