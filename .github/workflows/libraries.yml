@@ -7,13 +7,13 @@ permissions:
   contents: read
 
 jobs:
-  setup:
+  behaviours:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
 
-    - id: haskell
+    - id: setup
       uses: haskell/actions/setup@v2
       with:
         ghc-version: 8.10.7
@@ -22,16 +22,13 @@ jobs:
       with:
         key: ${{ runner.os }}-cabal-store
         path: |
-          ${{ steps.haskell.outputs.cabal-store }}
+          ${{ steps.setup.outputs.cabal-store }}
           dist-newstyle
 
-  behaviours:
-    needs: setup
-    runs-on: ubuntu-latest
-
-    steps:
     - name: Dependencies
-      run: cabal build behaviours --only-dependencies --enable-tests --enable-benchmarks
+      run: |
+        cabal update
+        cabal build behaviours --only-dependencies --enable-tests --enable-benchmarks
 
     - name: Build
       run: cabal build behaviours --enable-tests
@@ -40,12 +37,27 @@ jobs:
       run: cabal test behaviours
 
   wavefront:
-    needs: setup
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v3
+
+    - id: setup
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: 8.10.7
+
+    - uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-cabal-store
+        path: |
+          ${{ steps.setup.outputs.cabal-store }}
+          dist-newstyle
+
     - name: Dependencies
-      run: cabal build wavefront --only-dependencies --enable-tests --enable-benchmarks
+      run: |
+        cabal update
+        cabal build wavefront --only-dependencies --enable-tests --enable-benchmarks
 
     - name: Build
       run: cabal build wavefront --enable-tests
