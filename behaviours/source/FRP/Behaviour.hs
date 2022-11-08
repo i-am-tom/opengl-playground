@@ -46,12 +46,12 @@ instance Applicative (Behaviour m) where
 -- sampled from the given behaviour, "fold" it to produce a cumulative new
 -- value for the second behaviour.
 fold ∷ ∀ m x y. PrimMonad m ⇒ (x → y → y) → y → Behaviour m x → Behaviour m y
-fold f init xs = Behaviour \when →
+fold f initial xs = Behaviour \when →
   Event \k → do
     (event, push) ← Event.create
 
     let behaviour ∷ Behaviour m y
-        behaviour = liftA2 f xs (stepper init event)
+        behaviour = liftA2 f xs (stepper initial event)
 
     input  ← Event.subscribe (sample_ behaviour when) push
     output ← Event.subscribe (Event.sample event when) k

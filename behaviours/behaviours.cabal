@@ -3,22 +3,19 @@ name: behaviours
 version: 0.1.0.0
 
 library
-    exposed-modules:
-      FRP.Behaviour
-      FRP.Event
     build-depends:
       , base ^>= 4.14
       , containers ^>= 0.6
       , primitive ^>= 0.7
       , witherable ^>= 0.4
-    hs-source-dirs: source
     default-language: Haskell2010
+    exposed-modules:
+      FRP.Behaviour
+      FRP.Event
+    ghc-options: -Wall -Wextra -Werror
+    hs-source-dirs: source
 
 test-suite behaviours
-  default-language: Haskell2010
-  type: exitcode-stdio-1.0
-  hs-source-dirs: tests
-  main-is: Driver.hs
   build-depends:
     , base
     , behaviours
@@ -30,6 +27,11 @@ test-suite behaviours
     , witherable
   build-tool-depends:
    tasty-discover:tasty-discover
+  default-language: Haskell2010
+  ghc-options: -Wall -Wextra -Werror
+  hs-source-dirs: tests
+  main-is: Driver.hs
   other-modules:
     FRP.BehaviourTest
     FRP.EventTest
+  type: exitcode-stdio-1.0

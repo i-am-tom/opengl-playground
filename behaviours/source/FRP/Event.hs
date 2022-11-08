@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wall -Wextra #-}
-
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
