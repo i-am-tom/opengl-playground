@@ -13,30 +13,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - id: setup
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: 8.10.7
+
     - uses: actions/cache@v3
       with:
+        key: ${{ runner.os }}-cabal-store
         path: |
-          ~/.ghcup
-          ~/.cabal/packages
-          ~/.cabal/store
+          ${{ steps.setup.outputs.cabal-store }}
           dist-newstyle
-
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-
-    - name: Install Haskell
-      run: |
-        sudo apt-get update
-        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_MINIMAL=please sh
-
-        ghcup install ghc 8.10.7
-        ghcup install cabal 3.6.2.0
-
-        ghcup set ghc 8.10.7
-        ghcup set cabal 3.6.2.0
 
     - name: Dependencies
       run: |
@@ -97,30 +84,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - id: setup
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: 8.10.7
+
     - uses: actions/cache@v3
       with:
+        key: ${{ runner.os }}-cabal-store
         path: |
-          ~/.ghcup
-          ~/.cabal/packages
-          ~/.cabal/store
+          ${{ steps.setup.outputs.cabal-store }}
           dist-newstyle
-
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-
-    - name: Install Haskell
-      run: |
-        sudo apt-get update
-        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_MINIMAL=please sh
-
-        ghcup install ghc 8.10.7
-        ghcup install cabal 3.6.2.0
-
-        ghcup set ghc 8.10.7
-        ghcup set cabal 3.6.2.0
 
     - name: Dependencies
       run: |
