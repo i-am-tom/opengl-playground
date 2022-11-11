@@ -1,16 +1,18 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
 module Wavefront.ParserTest where
 
 import Data.Kind (Type)
-import Data.OneOf (OneOf, inj)
+import Data.Variant (Variant, Inject (inject))
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Text.Parsec.ByteString (parseFromFile)
-import Wavefront.Parser hiding (comment, i, j, k, v, x, y, z)
+import Wavefront.Parser hiding (i, j, k, v, x, y, z)
 
 spec_examples ∷ Spec
 spec_examples = describe "Spec examples" do
@@ -24,6 +26,16 @@ spec_examples = describe "Spec examples" do
       , v 2.000000 2.000000 0.000000
 
       , fv [ 1, 2, 3, 4 ]
+      ]
+
+  it "square facing towards the camera, vertex only" do
+    result ← parseFromFile (parser @'[ GeometricVertex ]) "examples/square.obj"
+
+    result `shouldBe` Right
+      [ v_ 0.000000 2.000000 0.000000
+      , v_ 0.000000 0.000000 0.000000
+      , v_ 2.000000 0.000000 0.000000
+      , v_ 2.000000 2.000000 0.000000
       ]
 
   it "cube with each vertex shared by three faces" do
@@ -178,38 +190,46 @@ type Commands =
   '[ GeometricVertex
    , VertexNormal
    , TextureVertex
+
    , Points
    , Line
    , Face
+
    , GroupNames
    , SmoothingGroup
    , ObjectName
    , Comment
    ]
 
-comment ∷ String → OneOf Commands
-comment = inj . Comment
+comment ∷ String → Variant Commands
+comment = inject . Comment
 
-v ∷ Double → Double → Double → OneOf Commands
-v x y z = inj $ GeometricVertex x y z
-
-vn ∷ Double → Double → Double → OneOf Commands
-vn i j k = inj $ VertexNormal i j k
-
-fv ∷ [Int] → OneOf Commands
-fv vs = f [( vertex, Nothing, Nothing ) | vertex ← vs]
-
-fvn ∷ [(Int, Int)] → OneOf Commands
-fvn vs = f [( vertex, Nothing, Just normal ) | (vertex, normal) ← vs]
-
-f ∷ [(Int, Maybe Int, Maybe Int)] → OneOf Commands
-f xs = inj $ Face
+f ∷ [(Int, Maybe Int, Maybe Int)] → Variant Commands
+f xs = inject $ Face
   [ (Index vertex, fmap Index texture, fmap Index normal)
   | (vertex, texture, normal) ← xs
   ]
 
-g ∷ [String] → OneOf Commands
-g = inj . GroupNames
+fv ∷ [Int] → Variant Commands
+fv vs = f [( vertex, Nothing, Nothing ) | vertex ← vs]
 
-s ∷ Maybe Int → OneOf Commands
-s = inj . SmoothingGroup
+fvn ∷ [(Int, Int)] → Variant Commands
+fvn vs = f [( vertex, Nothing, Just normal ) | (vertex, normal) ← vs]
+
+g ∷ [String] → Variant Commands
+g = inject . GroupNames
+
+s ∷ Maybe Int → Variant Commands
+s = inject . SmoothingGroup
+
+v ∷ Double → Double → Double → Variant Commands
+v x y z = inject $ GeometricVertex x y z
+
+v_ ∷ Inject xs GeometricVertex ⇒ Double → Double → Double → Variant xs
+v_ x y z = inject $ GeometricVertex x y z
+
+vn ∷ Double → Double → Double → Variant Commands
+vn i j k = inject $ VertexNormal i j k
+
+vn_ ∷ Inject xs VertexNormal ⇒ Double → Double → Double → Variant xs
+vn_ i j k = inject $ VertexNormal i j k

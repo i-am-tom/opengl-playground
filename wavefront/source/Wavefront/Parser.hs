@@ -1,5 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -7,6 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
@@ -19,63 +19,56 @@ module Wavefront.Parser where
 import Control.Applicative (liftA2)
 import Control.Monad (ap, guard)
 import Data.Char (isSpace)
-import Data.Kind (Type)
+import Data.Kind (Constraint, Type)
 import Data.Maybe (catMaybes)
-import Data.OneOf (type (∈) (..), OneOf)
-import Text.Parsec hiding (Line)
+import Data.Variant (type (~>), Variant, interpret_)
+import Text.Parsec hiding (Line, parse)
 import Text.Parsec.Number (floating, int, sign)
 
-parser
-  ∷ ∀ s m u xs
-  . ( GeometricVertex ∈ xs
-    , VertexNormal    ∈ xs
-    , TextureVertex   ∈ xs
-    , Points          ∈ xs
-    , Line            ∈ xs
-    , Face            ∈ xs
-    , GroupNames      ∈ xs
-    , SmoothingGroup  ∈ xs
-    , ObjectName      ∈ xs
-    , Comment         ∈ xs
-
-    , Stream s m Char
-    )
-  ⇒ ParsecT s u m [OneOf xs]
+-- | A parser for any subset of @OBJ@ commands. The resulting type determines
+-- the commands that we want to parse, and every other command will be ignored.
+parser ∷ ∀ xs s m u. (Command ~> xs, Stream s m Char) ⇒ ParsecT s u m [Variant xs]
 parser = do
-  commands ← many $ choice
-    [ Nothing <$ many1 space
+  let line ∷ ParsecT s u m (Maybe (Variant xs))
+      line = choice
+        [ Just    <$> interpret_ @Command (try parse)
+        , Nothing <$  restOfLine
+        ]
 
-    , fmap (Just . inj) vertexNormal
-    , fmap (Just . inj) textureVertex
-    , fmap (Just . inj) geometricVertex
-    , fmap (Just . inj) points
-    , fmap (Just . inj) line
-    , fmap (Just . inj) face
-    , fmap (Just . inj) groupNames
-    , fmap (Just . inj) smoothingGroup
-    , fmap (Just . inj) objectName
-    , fmap (Just . inj) comment
-    ]
+  commands ← line `endBy` endOfLine <* eof
+  pure (catMaybes commands)
 
-  catMaybes commands <$ eof
+-- | A 'Command' is a line in an @OBJ@ file that we know how to parse.
+type Command ∷ Type → Constraint
+class Command x where
+
+  -- | A parser for this particular 'Command'.
+  parse ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m x
 
 -- * Vertex data
 
+-- ** Geometric vertices
+--
+--     v x y z
+--
+-- Specifies a geometric vertex and its x y z coordinates.
+--
+-- @x y z@ are the @x@, @y@, and @z@ coordinates for the vertex. These are
+-- floating point numbers that define the position of the vertex in three
+-- dimensions.
 type GeometricVertex ∷ Type
-data GeometricVertex
-  = GeometricVertex { x ∷ Double, y ∷ Double, z ∷ Double }
+data GeometricVertex = GeometricVertex { x ∷ Double, y ∷ Double, z ∷ Double }
   deriving stock (Eq, Ord, Show)
 
--- | Parse a 'GeometricVertex'.
-geometricVertex ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m GeometricVertex
-geometricVertex = command do
-  _ ← char 'v'
+instance Command GeometricVertex where
+  parse = do
+    _ ← char 'v'
 
-  x ← many1 lineSpace *> ap sign floating
-  y ← many1 lineSpace *> ap sign floating
-  z ← many1 lineSpace *> ap sign floating
+    x ← many1 lineSpace *> ap sign floating
+    y ← many1 lineSpace *> ap sign floating
+    z ← many1 lineSpace *> ap sign floating
 
-  pure GeometricVertex{..}
+    pure GeometricVertex{..}
 
 -- ** Vertex normals
 --
@@ -91,20 +84,18 @@ geometricVertex = command do
 -- @i@ @j@ @k@ are the @i@, @j@, and @k@ coordinates for the vertex normal.
 -- They are floating point numbers.
 type VertexNormal ∷ Type
-data VertexNormal
-  = VertexNormal { i ∷ Double, j ∷ Double, k ∷ Double }
+data VertexNormal = VertexNormal { i ∷ Double, j ∷ Double, k ∷ Double }
   deriving stock (Eq, Ord, Show)
 
--- | Parse a 'VertexNormal'.
-vertexNormal ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m VertexNormal
-vertexNormal = command do
-  _ ← try (string "vn")
+instance Command VertexNormal where
+  parse = do
+    _ ← try (string "vn")
 
-  i ← many1 lineSpace *> floating
-  j ← many1 lineSpace *> floating
-  k ← many1 lineSpace *> floating
+    i ← many1 lineSpace *> floating
+    j ← many1 lineSpace *> floating
+    k ← many1 lineSpace *> floating
 
-  pure VertexNormal{..}
+    pure VertexNormal{..}
 
 -- ** Texture vertices
 --
@@ -125,16 +116,15 @@ data TextureVertex
   = TextureVertex { u ∷ Double, v ∷ Double, w ∷ Double }
   deriving stock (Eq, Ord, Show)
 
--- | Parse a 'TextureVertex'.
-textureVertex :: ∀ s m u. Stream s m Char ⇒ ParsecT s u m TextureVertex
-textureVertex = command do
-  _ ← try (string "vt")
+instance Command TextureVertex where
+  parse = do
+    _ ← try (string "vt")
 
-  u ← many1 lineSpace *> floating
-  v ← many1 lineSpace *> option 0 floating
-  w ← many1 lineSpace *> option 0 floating
+    u ← many1 lineSpace *>          floating
+    v ← many1 lineSpace *> option 0 floating
+    w ← many1 lineSpace *> option 0 floating
 
-  pure TextureVertex{..}
+    pure TextureVertex{..}
 
 -- * Elements
 
@@ -153,18 +143,17 @@ type Points ∷ Type
 newtype Points = Points [Index GeometricVertex]
   deriving stock (Eq, Ord, Show)
 
-points ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Points
-points = command do
-  _ ← char 'p'
+instance Command Points where
+  parse = do
+    _ ← char 'p'
 
-  let point ∷ ParsecT s u m (Index GeometricVertex)
-      point = do
-        index ← many1 lineSpace *> int
+    entries ← many1 do
+      index ← many1 lineSpace *> int
 
-        guard (index /= 0) <?> "non-zero index"
-        pure (Index index)
+      guard (index /= 0) <?> "non-zero index"
+      pure (Index index)
 
-  fmap Points (many1 point)
+    pure (Points entries)
 
 -- ** Lines
 --
@@ -189,22 +178,23 @@ type Line ∷ Type
 newtype Line = Line [(Index GeometricVertex, Maybe (Index TextureVertex))]
   deriving stock (Eq, Ord, Show)
 
--- | Parse a 'Line'.
-line ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Line
-line = command do
-  _ ← char 'l'
+instance Command Line where
+  parse = do
+    _ ← char 'l'
 
-  fmap Line $ atLeast 2 do
-    vertex ← many1 lineSpace *> int
-    guard (vertex /= 0) <?> "non-zero vertex index"
+    points ← atLeast 2 do
+      vertex ← many1 lineSpace *> int
+      guard (vertex /= 0) <?> "non-zero vertex index"
 
-    texture ← optionMaybe do
-      texture ← char '/' *> int
-      guard (texture /= 0) <?> "non-zero texture index"
+      texture ← optionMaybe do
+        texture ← char '/' *> int
+        guard (texture /= 0) <?> "non-zero texture index"
 
-      pure texture
+        pure texture
 
-    pure (Index vertex, fmap Index texture)
+      pure (Index vertex, fmap Index texture)
+
+    pure (Line points)
 
 -- ** Faces
 --
@@ -226,60 +216,57 @@ line = command do
 -- @vn@ is an optional argument. @vn@ is the reference number for a vertex
 -- normal in the face element. It must always follow the second slash.
 --
--- Face elements use surface normals to indicate their orientation. If
--- vertices are ordered counterclockwise around the face, both the
--- face and the normal will point toward the viewer. If the vertex
--- ordering is clockwise, both will point away from the viewer. If
--- vertex normals are assigned, they should point in the general
--- direction of the surface normal, otherwise unpredictable results
--- may occur.
+-- Face elements use surface normals to indicate their orientation. If vertices
+-- are ordered counterclockwise around the face, both the face and the normal
+-- will point toward the viewer. If the vertex ordering is clockwise, both will
+-- point away from the viewer. If vertex normals are assigned, they should
+-- point in the general direction of the surface normal, otherwise
+-- unpredictable results may occur.
 --
--- If a face has a texture map assigned to it and no texture vertices
--- are assigned in the @f@ statement, the texture map is ignored when
--- the element is rendered.
+-- If a face has a texture map assigned to it and no texture vertices are
+-- assigned in the @f@ statement, the texture map is ignored when the element
+-- is rendered.
 type Face ∷ Type
-data Face = Face
-  [ ( Index GeometricVertex
-    , Maybe (Index TextureVertex)
-    , Maybe (Index VertexNormal)
-    )
-  ]
+data Face
+  = Face
+      [ ( Index GeometricVertex
+        , Maybe (Index TextureVertex)
+        , Maybe (Index VertexNormal)
+        )
+      ]
   deriving stock (Eq, Ord, Show)
 
--- | Parse a 'Face'.
-face ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Face
-face = command do
-  _ ← char 'f'
+instance Command Face where
+  parse = do
+    _ ← char 'f'
 
-  vertices ← atLeast 3 do
-    vertex ← many1 lineSpace *> int
-    guard (vertex /= 0) <?> "non-zero geometric vertex index"
+    vertices ← atLeast 3 do
+      vertex ← many1 lineSpace *> int
+      guard (vertex /= 0) <?> "non-zero geometric vertex index"
 
-    (texture, normal) ← option (Nothing, Nothing) do
-      _ ← char '/'
-
-      texture ← optionMaybe do
-        texture ← int
-        guard (texture /= 0) <?> "non-zero texture vertex index"
-
-        pure texture
-
-      normal ← option Nothing do
+      (texture, normal) ← option (Nothing, Nothing) do
         _ ← char '/'
 
-        normal ← optionMaybe do
-          normal ← int
-          guard (normal /= 0) <?> "non-zero normal vector index"
+        texture ← optionMaybe do
+          texture ← int
+          guard (texture /= 0) <?> "non-zero texture vertex index"
 
-          pure normal
+          pure texture
 
-        pure normal
+        normal ← option Nothing do
+          _ ← char '/'
 
-      pure (texture, normal)
+          optionMaybe do
+            normal ← int
+            guard (normal /= 0) <?> "non-zero normal vector index"
 
-    pure (Index vertex, fmap Index texture, fmap Index normal)
+            pure normal
 
-  pure (Face vertices)
+        pure (texture, normal)
+
+      pure (Index vertex, fmap Index texture, fmap Index normal)
+
+    pure (Face vertices)
 
 -- * Grouping
 
@@ -297,16 +284,15 @@ face = command do
 newtype GroupNames = GroupNames [String]
   deriving stock (Eq, Ord, Show)
 
--- | Parse some 'GroupNames'.
-groupNames ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m GroupNames
-groupNames = command do
-  _ ← char 'g'
+instance Command GroupNames where
+  parse = do
+    _ ← char 'g'
 
-  names ← many1 do
-    _ ← many1 lineSpace
-    many1 alphaNum
+    names ← many1 do
+      _ ← many1 lineSpace
+      many1 alphaNum
 
-  pure (GroupNames names)
+    pure (GroupNames names)
 
 -- ** Smoothing groups
 --
@@ -320,19 +306,18 @@ groupNames = command do
 newtype SmoothingGroup = SmoothingGroup (Maybe Int)
   deriving stock (Eq, Ord, Show)
 
--- | Parse a 'SmoothingGroup'.
-smoothingGroup ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m SmoothingGroup
-smoothingGroup = command do
-  _ ← char 's' *> many1 lineSpace
+instance Command SmoothingGroup where
+  parse = do
+    _ ← char 's' *> many1 lineSpace
 
-  group ←
-    choice
-      [ string "off" *> pure Nothing
-      , char    '0'  *> pure Nothing
-      , fmap Just int
-      ]
+    group ←
+      choice
+        [ string "off" *> pure Nothing
+        , char    '0'  *> pure Nothing
+        , fmap Just int
+        ]
 
-  pure (SmoothingGroup group)
+    pure (SmoothingGroup group)
 
 -- ** Object names
 --
@@ -345,13 +330,12 @@ smoothingGroup = command do
 newtype ObjectName = ObjectName { getObjectName ∷ String }
   deriving newtype (Eq, Ord, Show)
 
--- | Parse an 'ObjectName'.
-objectName ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m ObjectName
-objectName = command do
-  _ ← char 'o'
+instance Command ObjectName where
+  parse = do
+    _ ← char 'o'
 
-  name ← many1 lineSpace *> manyTill anyChar (try endOfLine)
-  pure (ObjectName name)
+    name ← many1 lineSpace *> restOfLine
+    pure (ObjectName name)
 
 -- * Comments
 --
@@ -362,13 +346,12 @@ objectName = command do
 newtype Comment = Comment { getComment ∷ String }
   deriving newtype (Eq, Ord, Show)
 
--- | Parse a 'Comment'.
-comment ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Comment
-comment = command do
-  _ ← char '#'
+instance Command Comment where
+  parse = do
+    _ ← char '#'
 
-  text ← many1 lineSpace *> manyTill anyChar (try $ lookAhead endOfLine)
-  pure (Comment text)
+    text ← many1 lineSpace *> restOfLine
+    pure (Comment text)
 
 -- * Helpers
 
@@ -380,10 +363,9 @@ lineSpace = satisfy \c → isSpace c && c /= '\n' && c /= '\r'
 atLeast ∷ ∀ s m t u x. Stream s m t ⇒ Int → ParsecT s u m x → ParsecT s u m [x]
 atLeast n xs = liftA2 (<>) (count n xs) (many xs)
 
--- | Define a command parser. Commands are trimmed of space on either side, and
--- assumed to end in an EOL.
-command ∷ ∀ s m u x. Stream s m Char ⇒ ParsecT s u m x → ParsecT s u m x
-command inner = inner <* manyTill space (try endOfLine)
+-- | Match the rest of the line.
+restOfLine ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m String
+restOfLine = manyTill anyChar (try (lookAhead endOfLine))
 
 -- | A newtype for keeping track of /what/ we're indexing.
 type Index ∷ Type → Type

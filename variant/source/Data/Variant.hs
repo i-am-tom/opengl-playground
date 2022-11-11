@@ -100,17 +100,23 @@ instance {-# INCOHERENT #-} Offer xs x
 
 -- | Interpret the input into the 'Variant' by attempting to build each type
 -- with an 'Alternative' function.
-type Interpret ∷ (Type → Constraint) → [Type] → Constraint
-class Interpret c xs where
+type (~>) ∷ (Type → Constraint) → [Type] → Constraint
+class c ~> xs where
   
   -- | Interpret the input into one of the possible outputs.
   interpret ∷ ∀ f i. Alternative f ⇒ (∀ o. c o ⇒ i → f o) → i → f (Variant xs)
 
-instance Interpret c '[] where
+instance c ~> '[] where
   interpret _ _ = empty
 
-instance (c x, Interpret c xs) ⇒ Interpret c (x ': xs) where
+instance (c x, c ~> xs) ⇒ c ~> (x ': xs) where
   interpret f x = fmap (Choice Here) (f x) <|> fmap grow (interpret @c f x)
+
+-- | Sometimes, we don't need inputs to write interpreters. A good example that
+-- we use in @wavefront@ is parsing: parsers are simply @ParsecT s u m x@ with
+-- no input.
+interpret_ ∷ ∀ c f xs. (Alternative f, c ~> xs) ⇒ (∀ o. c o ⇒ f o) → f (Variant xs)
+interpret_ m = interpret @c (const m) ()
 
 -- | Apply the given function to the value in the 'Variant'.
 fold ∷ ∀ c xs r. All c xs ⇒ Variant xs → (∀ x. c x ⇒ x → r) → r
