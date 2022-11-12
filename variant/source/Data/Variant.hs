@@ -3,9 +3,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
@@ -18,6 +18,7 @@
 -- | A generalised 'Either' to any number of types, rather than just two.
 module Data.Variant where
 
+import Data.Bifunctor (first)
 import Control.Applicative (Alternative ((<|>), empty))
 import Data.Kind (Constraint, Type)
 import Type.Reflection ((:~:) (..))
@@ -80,7 +81,7 @@ class Inject xs x where inject ∷ x → Variant xs
 instance Inject (x ': xs) x where
   inject x = Choice Here x
 
-instance {-# INCOHERENT #-} Inject xs x ⇒ Inject (y ': xs) x where
+instance {-# OVERLAPPABLE #-} Inject xs x ⇒ Inject (y ': xs) x where
   inject x = case inject x of Choice ix vx -> Choice (There ix) vx
 
 -- | Attempt to wrap a value in a 'Variant', failing if the 'Variant' doesn't
@@ -97,6 +98,47 @@ instance Offer (x ': xs) x where
 instance {-# INCOHERENT #-} Offer xs x
     ⇒ Offer (y ': xs) x where
   offer = fmap grow . offer
+
+-- | Pluck an item from a 'Variant'. This can be thought of as the
+-- "annihilator" of 'Inject'. Consider the following:
+--
+--     f ∷ (Inject xs a, Inject xs b, Catch a xs ys) ⇒ Variant xs
+--
+-- Thanks to some INCOHERENT magic, these constraints will cancel:
+--
+--     f ∷ Inject xs b ⇒ Variant xs
+type Catch ∷ Type → [Type] -> [Type] → Constraint
+class Catch x xs ys | x xs → ys, xs ys → x, x ys → xs where
+  catch ∷ Variant xs → Either (Variant ys) x
+
+instance Catch x (x ': xs) xs where
+  catch (Choice i x) = case i of
+    Here    → Right x
+    There j → Left (Choice j x)
+
+instance {-# INCOHERENT #-} (y ~ z, Catch x xs ys)
+    ⇒ Catch x (y ': xs) (z ': ys) where
+  catch (Choice i x) = case i of
+    Here    → error "Impossible"
+    There j → first grow (catch (Choice j x))
+
+-- | Begin a case match. These functions are designed to be used in the
+-- following way:
+--
+--     given xs
+--       & match \bool → f bool
+--       & match \int → g int
+--       & qed
+given ∷ ∀ xs r. Variant xs → Either (Variant xs) r
+given = Left
+
+-- | Handle one case of a 'Variant'. See 'given' for example usage.
+match ∷ ∀ x xs r. (x → r) → Either (Variant (x : xs)) r → Either (Variant xs) r
+match f = either (fmap f . catch) pure
+
+-- | Complete a case match. See 'given' for example usage.
+qed ∷ ∀ r. Either (Variant '[]) r → r
+qed = either preposterous id
 
 -- | Interpret the input into the 'Variant' by attempting to build each type
 -- with an 'Alternative' function.
