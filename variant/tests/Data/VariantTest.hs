@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnicodeSyntax #-}
@@ -7,6 +8,7 @@
 
 module Data.VariantTest where
 
+import Data.Function ((&))
 import Data.Variant
 import Test.Hspec (Spec, it, shouldBe)
 import Text.Read (readMaybe)
@@ -29,6 +31,44 @@ spec_Variant = do
     example True `shouldBe` Just (Choice (There Here) True)
     example () `shouldBe` Just (Choice (There (There Here)) ())
     example (3 ∷ Int) `shouldBe` Nothing
+
+  it "Value projection" do
+    let x ∷ (Inject xs String, Inject xs Int, Inject xs Bool) ⇒ Variant xs
+        x = inject "hello"
+
+        y ∷ (Inject xs String, Inject xs Int, Inject xs Bool) ⇒ Variant xs
+        y = inject (3 ∷ Int)
+
+        z ∷ (Inject xs String, Inject xs Int, Inject xs Bool) ⇒ Variant xs
+        z = inject True
+
+    catch x `shouldBe` Right @(Variant '[Int, Bool]) "hello"
+    catch y `shouldBe` Right @(Variant '[String, Bool]) (3 ∷ Int)
+    catch z `shouldBe` Right @(Variant '[String, Int]) True
+
+    -- Mismatch
+    catch x `shouldBe` Left @(Variant '[String, Bool]) @Int (Choice Here "hello")
+
+  it "Case matching" do
+    let x ∷ Variant '[String, Int, Bool]
+        x = inject "hello"
+
+        y ∷ Variant '[String, Int, Bool]
+        y = inject (3 ∷ Int)
+
+        z ∷ Variant '[String, Int, Bool]
+        z = inject True
+
+        strip ∷ Variant '[String, Int, Bool] → String
+        strip e = given e
+          & match (\s → "STRING: " ++ s)
+          & match (\i → "INT: " ++ show i)
+          & match (\b → "BOOL: " ++ show b)
+          & qed
+
+    strip x `shouldBe` "STRING: hello"
+    strip y `shouldBe` "INT: 3"
+    strip z `shouldBe` "BOOL: True"
 
   it "Interpretation" do
     let example ∷ String → Maybe (Variant '[Int, Bool])
