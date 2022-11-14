@@ -1,373 +1,108 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
 -- |
--- A parser based on http://paulbourke.net/dataformats/obj/ for /polygonal/
--- geometry. I've tried to remove references to free-form geometry and
--- Wavefront-specific products where possible.
+-- A parser for the specific subset of @OBJ@ that we're likely to care about.
+-- Open to extension later. The supported specification is a subset of the
+-- specification given here: http://paulbourke.net/dataformats/obj/.
 module Wavefront.Parser where
 
-import Control.Applicative (liftA2)
-import Control.Monad (ap, guard)
-import Data.Char (isSpace)
-import Data.Kind (Constraint, Type)
+import Control.Monad (guard)
+import Data.Kind (Type)
 import Data.Maybe (catMaybes)
-import Data.Variant (type (~>), Variant, interpret_)
-import Text.Parsec hiding (Line, parse)
+import Linear (M33, V2 (V2), V3 (V3))
+import Numeric.Natural (Natural)
+import Text.Parsec hiding (Line, State, parse, space)
 import Text.Parsec.Number (floating, int, sign)
 
--- | A parser for any subset of @OBJ@ commands. The resulting type determines
--- the commands that we want to parse, and every other command will be ignored.
-parser ∷ ∀ xs s m u. (Command ~> xs, Stream s m Char) ⇒ ParsecT s u m [Variant xs]
+-- | Commands that we're interested in supporting.
+type Command ∷ Type
+data Command
+  = GeometricVertex (V3   Double) -- ^ A point in 3D space.
+  | TextureVertex   (V2   Double) -- ^ A 2D texture coordinate.
+  | VertexNormal    (V3   Double) -- ^ A 3D surface normal vector.
+  | Triangle        (M33 Natural) -- ^ Three triples of position/texture/normal.
+  deriving stock (Eq, Ord, Show)
+
+-- | Parse an @OBJ@ file into a list of 'Command' values. Note that lines that
+-- fail to parse will be ignored: parse errors will only occur for lines that
+-- begin with one of our recognised commands.
+parser ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m [Command]
 parser = do
-  let line ∷ ParsecT s u m (Maybe (Variant xs))
-      line = choice
-        [ Just    <$> interpret_ @Command (try parse)
-        , Nothing <$  restOfLine
+  let ignore ∷ ParsecT s u m String
+      ignore = manyTill anyChar $ try (lookAhead endOfLine)
+
+      command ∷ ParsecT s u m (Maybe Command)
+      command = choice
+        [ Just    <$> choice [ v, vn, vt, f ]
+        , Nothing <$  ignore
         ]
 
-  commands ← line `endBy` endOfLine <* eof
+  commands ← command `sepEndBy` endOfLine
   pure (catMaybes commands)
 
--- | A 'Command' is a line in an @OBJ@ file that we know how to parse.
-type Command ∷ Type → Constraint
-class Command x where
+-- | Parse a geometric vertex: an @x y z@ position in space.
+v ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Command
+v = do
+  _ ← try $ char 'v' *> notFollowedBy (oneOf "npt")
 
-  -- | A parser for this particular 'Command'.
-  parse ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m x
+  x ← many1 space *> sign <*> floating
+  y ← many1 space *> sign <*> floating
+  z ← many1 space *> sign <*> floating
 
--- * Vertex data
+  pure $ GeometricVertex (V3 x y z)
 
--- ** Geometric vertices
---
---     v x y z
---
--- Specifies a geometric vertex and its x y z coordinates.
---
--- @x y z@ are the @x@, @y@, and @z@ coordinates for the vertex. These are
--- floating point numbers that define the position of the vertex in three
--- dimensions.
-type GeometricVertex ∷ Type
-data GeometricVertex = GeometricVertex { x ∷ Double, y ∷ Double, z ∷ Double }
-  deriving stock (Eq, Ord, Show)
+-- | Parse a vertex normal: an @i j k@ vector.
+vn ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Command
+vn = do
+  _ ← try $ string "vn"
 
-instance Command GeometricVertex where
-  parse = do
-    _ ← char 'v'
+  x ← many1 space *> sign <*> floating
+  y ← many1 space *> sign <*> floating
+  z ← many1 space *> sign <*> floating
 
-    x ← many1 lineSpace *> ap sign floating
-    y ← many1 lineSpace *> ap sign floating
-    z ← many1 lineSpace *> ap sign floating
+  pure $ VertexNormal (V3 x y z)
 
-    pure GeometricVertex{..}
+-- | Parse a texture coordinate: a @u v@ coordinate.
+vt ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Command
+vt = do
+  _ ← try $ string "vt"
 
--- ** Vertex normals
---
---     vn i j k
---
--- Specifies a normal vector with components @i@, @j@, and @k@.
---
--- Vertex normals affect the smooth-shading and rendering of geometry. For
--- polygons, vertex normals are used in place of the actual facet normals.
---
--- When vertex normals are present, they supersede smoothing groups.
---
--- @i@ @j@ @k@ are the @i@, @j@, and @k@ coordinates for the vertex normal.
--- They are floating point numbers.
-type VertexNormal ∷ Type
-data VertexNormal = VertexNormal { i ∷ Double, j ∷ Double, k ∷ Double }
-  deriving stock (Eq, Ord, Show)
+  x ← many1 space *>          floating
+  y ← many1 space *> option 0 floating
 
-instance Command VertexNormal where
-  parse = do
-    _ ← try (string "vn")
+  pure $ TextureVertex (V2 x y)
 
-    i ← many1 lineSpace *> floating
-    j ← many1 lineSpace *> floating
-    k ← many1 lineSpace *> floating
+-- | Parse a face: three vertex/texture/normal triples.
+f ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Command
+f = do
+  _ ← try $ char 'f'
 
-    pure VertexNormal{..}
+  let index ∷ Stream s m Char ⇒ ParsecT s u m Natural
+      index = do
+        value ← int @Int
 
--- ** Texture vertices
---
---     vt u v w
---
--- Specifies a texture vertex and its coordinates. A @1D@ texture requires only
--- @u@ texture coordinates, a @2D@ texture requires both @u@ and @v@ texture
--- coordinates, and a @3D@ texture requires all three coordinates.
---
--- @u@ is the value for the horizontal direction of the texture.
---
--- @v@ is the value for the vertical direction of the texture. The default is
--- @0@.
---
--- @w@ is a value for the depth of the texture. The default is @0@.
-type TextureVertex ∷ Type
-data TextureVertex
-  = TextureVertex { u ∷ Double, v ∷ Double, w ∷ Double }
-  deriving stock (Eq, Ord, Show)
+        guard (value > 0) <?> "positive index"
+        pure (fromIntegral value)
 
-instance Command TextureVertex where
-  parse = do
-    _ ← try (string "vt")
+      triple ∷ ParsecT s u m (V3 Natural)
+      triple = do
+        x ←             index
+        y ← char '/' *> index
+        z ← char '/' *> index
 
-    u ← many1 lineSpace *>          floating
-    v ← many1 lineSpace *> option 0 floating
-    w ← many1 lineSpace *> option 0 floating
+        pure (V3 x y z)
 
-    pure TextureVertex{..}
+  a ← many1 space *> triple
+  b ← many1 space *> triple
+  c ← many1 space *> triple
 
--- * Elements
+  pure $ Triangle (V3 a b c)
 
--- ** Points
---
---     p  v1 v2 v3 . . .
---
--- Specifies a point element and its vertex. You can specify multiple points
--- with this statement. Although points cannot be shaded or rendered, they are
--- used by other Advanced Visualizer programs.
---
--- @v@ is the vertex reference number for a point element. Each point element
--- requires one vertex. Positive values indicate absolute vertex numbers.
--- Negative values indicate relative vertex numbers.
-type Points ∷ Type
-newtype Points = Points [Index GeometricVertex]
-  deriving stock (Eq, Ord, Show)
-
-instance Command Points where
-  parse = do
-    _ ← char 'p'
-
-    entries ← many1 do
-      index ← many1 lineSpace *> int
-
-      guard (index /= 0) <?> "non-zero index"
-      pure (Index index)
-
-    pure (Points entries)
-
--- ** Lines
---
---     l  v1/vt1   v2/vt2   v3/vt3 . . .
---
--- Specifies a line and its vertex reference numbers. You can optionally
--- include the texture vertex reference numbers. Although lines cannot be
--- shaded or rendered, they are used by other Advanced Visualizer programs.
---
--- The reference numbers for the vertices and texture vertices must be
--- separated by a slash (@/@). There is no space between the number and the
--- slash.
---
--- @v@ is a reference number for a vertex on the line. A minimum of two vertex
--- numbers are required. There is no limit on the maximum. Positive values
--- indicate absolute vertex numbers. Negative values indicate relative vertex
--- numbers.
---
--- @vt@ is an optional argument. @vt@ is the reference number for a texture
--- vertex in the line element. It must always follow the first slash.
-type Line ∷ Type
-newtype Line = Line [(Index GeometricVertex, Maybe (Index TextureVertex))]
-  deriving stock (Eq, Ord, Show)
-
-instance Command Line where
-  parse = do
-    _ ← char 'l'
-
-    points ← atLeast 2 do
-      vertex ← many1 lineSpace *> int
-      guard (vertex /= 0) <?> "non-zero vertex index"
-
-      texture ← optionMaybe do
-        texture ← char '/' *> int
-        guard (texture /= 0) <?> "non-zero texture index"
-
-        pure texture
-
-      pure (Index vertex, fmap Index texture)
-
-    pure (Line points)
-
--- ** Faces
---
---     f  v1/vt1/vn1   v2/vt2/vn2   v3/vt3/vn3 . . .
---
--- Specifies a face element and its vertex reference number. You can optionally
--- include the texture vertex and vertex normal reference numbers.
---
--- The reference numbers for the vertices, texture vertices, and vertex normals
--- must be separated by slashes (@/@). There is no space between the number and
--- the slash.
---
--- @v@ is the reference number for a vertex in the face element. A minimum of
--- three vertices are required.
---
--- @vt@ is an optional argument. @vt@ is the reference number for a texture
--- vertex in the face element. It always follows the first slash.
---
--- @vn@ is an optional argument. @vn@ is the reference number for a vertex
--- normal in the face element. It must always follow the second slash.
---
--- Face elements use surface normals to indicate their orientation. If vertices
--- are ordered counterclockwise around the face, both the face and the normal
--- will point toward the viewer. If the vertex ordering is clockwise, both will
--- point away from the viewer. If vertex normals are assigned, they should
--- point in the general direction of the surface normal, otherwise
--- unpredictable results may occur.
---
--- If a face has a texture map assigned to it and no texture vertices are
--- assigned in the @f@ statement, the texture map is ignored when the element
--- is rendered.
-type Face ∷ Type
-data Face
-  = Face
-      [ ( Index GeometricVertex
-        , Maybe (Index TextureVertex)
-        , Maybe (Index VertexNormal)
-        )
-      ]
-  deriving stock (Eq, Ord, Show)
-
-instance Command Face where
-  parse = do
-    _ ← char 'f'
-
-    vertices ← atLeast 3 do
-      vertex ← many1 lineSpace *> int
-      guard (vertex /= 0) <?> "non-zero geometric vertex index"
-
-      (texture, normal) ← option (Nothing, Nothing) do
-        _ ← char '/'
-
-        texture ← optionMaybe do
-          texture ← int
-          guard (texture /= 0) <?> "non-zero texture vertex index"
-
-          pure texture
-
-        normal ← option Nothing do
-          _ ← char '/'
-
-          optionMaybe do
-            normal ← int
-            guard (normal /= 0) <?> "non-zero normal vector index"
-
-            pure normal
-
-        pure (texture, normal)
-
-      pure (Index vertex, fmap Index texture, fmap Index normal)
-
-    pure (Face vertices)
-
--- * Grouping
-
--- ** Group names
---
---     g group_name1 group_name2 . . .
---
--- Specifies the group name for the elements that follow it. You can have
--- multiple group names. If there are multiple groups on one line, the data
--- that follows belong to all groups. Group information is optional.
---
--- @group_name@ is the name for the group. Letters, numbers, and combinations
--- of letters and numbers are accepted for group names. The default group name
--- is @default@.
-newtype GroupNames = GroupNames [String]
-  deriving stock (Eq, Ord, Show)
-
-instance Command GroupNames where
-  parse = do
-    _ ← char 'g'
-
-    names ← many1 do
-      _ ← many1 lineSpace
-      many1 alphaNum
-
-    pure (GroupNames names)
-
--- ** Smoothing groups
---
---     s group_number
---
--- Sets the smoothing group for the elements that follow it. If you do not want
--- to use a smoothing group, specify @off@ or a value of @0@.
---
--- @group_number@ is the smoothing group number. To turn off smoothing groups,
--- use a value of @0@ or @off@.
-newtype SmoothingGroup = SmoothingGroup (Maybe Int)
-  deriving stock (Eq, Ord, Show)
-
-instance Command SmoothingGroup where
-  parse = do
-    _ ← char 's' *> many1 lineSpace
-
-    group ←
-      choice
-        [ string "off" *> pure Nothing
-        , char    '0'  *> pure Nothing
-        , fmap Just int
-        ]
-
-    pure (SmoothingGroup group)
-
--- ** Object names
---
---     o object_name
---
--- Optional statement. It specifies a user-defined object name for the elements
--- defined after this statement.
---
--- @object_name@ is the user-defined object name. There is no default.
-newtype ObjectName = ObjectName { getObjectName ∷ String }
-  deriving newtype (Eq, Ord, Show)
-
-instance Command ObjectName where
-  parse = do
-    _ ← char 'o'
-
-    name ← many1 lineSpace *> restOfLine
-    pure (ObjectName name)
-
--- * Comments
---
---     # this is a comment
---
--- Comments can appear anywhere in an @.obj@ file. They are used to annotate the
--- file; they are not processed.
-newtype Comment = Comment { getComment ∷ String }
-  deriving newtype (Eq, Ord, Show)
-
-instance Command Comment where
-  parse = do
-    _ ← char '#'
-
-    text ← many1 lineSpace *> restOfLine
-    pure (Comment text)
-
--- * Helpers
-
--- | Parse a space that isn't a newline.
-lineSpace ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Char
-lineSpace = satisfy \c → isSpace c && c /= '\n' && c /= '\r'
-
--- | Run a parser at least the given number of times.
-atLeast ∷ ∀ s m t u x. Stream s m t ⇒ Int → ParsecT s u m x → ParsecT s u m [x]
-atLeast n xs = liftA2 (<>) (count n xs) (many xs)
-
--- | Match the rest of the line.
-restOfLine ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m String
-restOfLine = manyTill anyChar (try (lookAhead endOfLine))
-
--- | A newtype for keeping track of /what/ we're indexing.
-type Index ∷ Type → Type
-data Index x = Index { getIndex ∷ Int }
-  deriving stock (Eq, Functor, Ord, Show)
+-- | A space or a tab.
+space ∷ ∀ s m u. Stream s m Char ⇒ ParsecT s u m Char
+space = oneOf "\t "

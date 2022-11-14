@@ -1,5 +1,5 @@
 packages: */*.cabal
 
 package *
-  flags: -Wall -Wextra
+  flags: -Wall -Wextra -Wunused-packages
   library-for-ghci: true

@@ -4,12 +4,16 @@ version: 0.1.0.0
 
 library
     exposed-modules:
+      Wavefront.Aggregate
       Wavefront.Parser
     build-depends:
       , base ^>= 4.14
+      , containers ^>= 0.6
+      , generic-monoid ^>= 0.1
+      , linear ^>= 1.21
       , parsec ^>= 3.1
       , parsec3-numbers ^>= 0.1
-      , variant
+      , vector ^>= 0.13
     ghc-options: -Wall -Wextra -Werror
     hs-source-dirs: source
     default-language: Haskell2010
@@ -17,14 +21,18 @@ library
 test-suite wavefront
   build-depends:
     , base
+    , bytestring ^>= 0.10
+    , containers
+    , generic-monoid
     , hedgehog ^>= 1.1
     , hspec ^>= 2.10
+    , linear
     , parsec
     , parsec3-numbers
     , tasty ^>= 1.4
     , tasty-hedgehog ^>= 1.3
     , tasty-hspec ^>= 1.2
-    , variant
+    , vector
   build-tool-depends:
    tasty-discover:tasty-discover
   default-language: Haskell2010
@@ -34,6 +42,8 @@ test-suite wavefront
     tests
   main-is: Driver.hs
   other-modules:
+    Wavefront.Aggregate
+    Wavefront.AggregateTest
     Wavefront.Parser
     Wavefront.ParserTest
   type: exitcode-stdio-1.0
