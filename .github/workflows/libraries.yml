@@ -1,4 +1,4 @@
-name: libraries
+name: packages
 
 on:
   push
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  behaviours:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,78 +27,15 @@ jobs:
         path: |
           ${{ steps.setup.outputs.cabal-store }}
           dist-newstyle
+          ~/.ghcup
 
-    - name: Dependencies
+    - name: Install dependencies
       run: |
         cabal update
-        cabal build behaviours --only-dependencies --enable-tests --enable-benchmarks
+        cabal build all --only-dependencies --enable-tests --enable-benchmarks
 
-    - name: Build
-      run: cabal build behaviours --enable-tests
+    - name: Build packages
+      run: cabal build all --enable-tests
 
-    - name: Test
-      run: cabal test behaviours
-
-  interface:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Install C libraries
-      run: sudo apt-get install libsdl2-dev
-
-    - uses: actions/checkout@v3
-
-    - id: setup
-      uses: haskell/actions/setup@v2
-      with:
-        ghc-version: 8.10.7
-
-    - uses: actions/cache@v3
-      with:
-        key: ${{ runner.os }}-cabal-store
-        path: |
-          ${{ steps.setup.outputs.cabal-store }}
-          dist-newstyle
-
-    - name: Dependencies
-      run: |
-        cabal update
-        cabal build interface --only-dependencies --enable-tests --enable-benchmarks
-
-    - name: Build
-      run: cabal build interface --enable-tests
-
-#    - name: Test
-#      run: cabal test interface
-
-  wavefront:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Install C libraries
-      run: sudo apt-get install libsdl2-dev
-
-    - uses: actions/checkout@v3
-
-    - id: setup
-      uses: haskell/actions/setup@v2
-      with:
-        ghc-version: 8.10.7
-
-    - uses: actions/cache@v3
-      with:
-        key: ${{ runner.os }}-cabal-store
-        path: |
-          ${{ steps.setup.outputs.cabal-store }}
-          dist-newstyle
-
-    - name: Dependencies
-      run: |
-        cabal update
-        cabal build wavefront --only-dependencies --enable-tests --enable-benchmarks
-
-    - name: Build
-      run: cabal build wavefront --enable-tests
-
-    - name: Test
-      run: cabal test wavefront
+    - name: Test packages
+      run: cabal test all
