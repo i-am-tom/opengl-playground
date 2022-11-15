@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install C libraries
+      run: sudo apt-get install libsdl2-dev
+
     - uses: actions/checkout@v3
 
     - id: setup
@@ -40,6 +43,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install C libraries
+      run: sudo apt-get install libsdl2-dev
+
     - uses: actions/checkout@v3
 
     - id: setup
@@ -69,6 +75,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install C libraries
+      run: sudo apt-get install libsdl2-dev
+
     - uses: actions/checkout@v3
 
     - id: setup
