@@ -7,13 +7,13 @@ library
       Wavefront.Aggregate
       Wavefront.Parser
     build-depends:
-      , base ^>= 4.14
-      , containers ^>= 0.6
-      , generic-monoid ^>= 0.1
-      , linear ^>= 1.21
-      , parsec ^>= 3.1
-      , parsec3-numbers ^>= 0.1
-      , vector ^>= 0.13
+      , base
+      , containers
+      , generic-monoid
+      , linear
+      , parsec
+      , parsec3-numbers
+      , vector
     ghc-options: -Wall -Wextra -Werror
     hs-source-dirs: source
     default-language: Haskell2010
@@ -21,17 +21,17 @@ library
 test-suite wavefront
   build-depends:
     , base
-    , bytestring ^>= 0.10
+    , bytestring
     , containers
     , generic-monoid
-    , hedgehog ^>= 1.1
-    , hspec ^>= 2.10
+    , hedgehog
+    , hspec
     , linear
     , parsec
     , parsec3-numbers
-    , tasty ^>= 1.4
-    , tasty-hedgehog ^>= 1.3
-    , tasty-hspec ^>= 1.2
+    , tasty
+    , tasty-hedgehog
+    , tasty-hspec
     , vector
   build-tool-depends:
    tasty-discover:tasty-discover

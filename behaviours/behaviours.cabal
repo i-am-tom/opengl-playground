@@ -4,10 +4,10 @@ version: 0.1.0.0
 
 library
   build-depends:
-    , base ^>= 4.14
-    , containers ^>= 0.6
-    , primitive ^>= 0.7
-    , witherable ^>= 0.4
+    , base
+    , containers
+    , primitive
+    , witherable
   default-language: Haskell2010
   exposed-modules:
     FRP.Behaviour
@@ -19,11 +19,11 @@ test-suite behaviours
   build-depends:
     , base
     , containers
-    , hedgehog ^>= 1.1
-    , monad-control ^>= 1.0
+    , hedgehog
+    , monad-control
     , primitive
-    , tasty ^>= 1.4
-    , tasty-hedgehog ^>= 1.3
+    , tasty
+    , tasty-hedgehog
     , witherable
   build-tool-depends:
    tasty-discover:tasty-discover
