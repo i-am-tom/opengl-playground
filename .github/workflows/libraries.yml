@@ -35,7 +35,7 @@ jobs:
         cabal build all --only-dependencies --enable-tests --enable-benchmarks
 
     - name: Build packages
-      run: cabal build all --enable-tests
+      run: cabal build all --enable-tests --ghc-options="-Werror"
 
     - name: Test packages
       run: cabal test all
